@@ -8,3 +8,7 @@ python-dotenv>=1.0
 pandas>=2.2
 pandas-ta>=0.3.14b0
 SQLModel>=0.0.22
+pandas
+pandas-ta
+requests
+python-telegram-bot>=20.3
