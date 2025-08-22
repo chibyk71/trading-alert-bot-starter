@@ -1,25 +1,42 @@
-import asyncio
-from dotenv import load_dotenv
-from alerts import send_telegram_alert
-from indicators import simple_moving_average
+import time
+from src.config.setting import settings
+from src.service.telegram_service import TelegramService
+from src.service.exchange_service import ExchangeService
+from src.analysis.signal_generator import generate_signals
+from src.utils.logger import logger
 
-# later you’ll plug in live broker data instead of dummy candles
-import random
+def main():
+    logger.info("Starting Trading Bot...")
 
-load_dotenv()
+    telegram = TelegramService()
+    exchange = ExchangeService()
 
-async def main():
-    print("📈 Trading bot started...")
+    while True:
+        try:
+            # Fetch latest market data
+            df = exchange.get_ohlcv(settings.SYMBOLS, settings.TIMEFRAME)
 
-    # Dummy loop to simulate price data
-    candles = [random.randint(90, 110) for _ in range(20)]
+            if df.empty:
+                logger.warning("No data received from exchange.")
+                time.sleep(int(settings.TIMEFRAME) * 60)
+                continue
 
-    # Example: calculate SMA(5)
-    sma = simple_moving_average(candles, period=5)
-    print(f"SMA(5): {sma}")
+            # Generate trading signal
+            signal = generate_signals(df)
+            logger.info(f"Signal for {settings.SYMBOLS}: {signal}")
 
-    # Example alert
-    await send_telegram_alert("🚨 Example alert: SMA(5) calculated.")
+            # Notify via Telegram if signal is strong
+            if signal in ["STRONG_BUY", "STRONG_SELL"]:
+                message = f"🚨 {settings.SYMBOLS} Signal: {signal}\nLast Price: {df['close'].iloc[-1]}"
+                telegram.send_message(message)
+                logger.info(f"Sent Telegram alert: {message}")
+
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}")
+
+        # Wait before polling again
+        time.sleep(int(settings.TIMEFRAME) * 60)
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

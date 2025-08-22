@@ -1,54 +1,38 @@
-import logging
+import pandas as pd
 import requests
-from src.config.setting import settings
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.utils.logger import logger
 
 class ExchangeService:
     BASE_URL = "https://api.binance.com/api/v3"
 
-    from typing import Optional
-
-    def __init__(self, symbol: Optional[str] = None, timeframe: Optional[str] = None):
-        self.symbol = symbol or settings.SYMBOL
-        self.timeframe = timeframe or settings.TIMEFRAME
-
-    def get_klines(self, limit: int = 100):
-        """
-        Fetch candlestick (OHLCV) data.
-        :param limit: Number of candles to retrieve.
-        :return: List of candlestick data.
-        """
+    def get_klines(self, symbol: str, interval: str, limit: int = 100):
         url = f"{self.BASE_URL}/klines"
-        params = {"symbol": self.symbol.upper(), "interval": self.timeframe, "limit": limit}
-
+        params = {"symbol": symbol.upper(), "interval": interval, "limit": limit}
         try:
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params)
             response.raise_for_status()
-            data = response.json()
-            logger.info(f"Fetched {len(data)} candles for {self.symbol} ({self.timeframe})")
-            return data
-        except requests.RequestException as e:
-            logger.error(f"Error fetching candlestick data: {e}")
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch klines: {e}")
             return []
 
-    def get_current_price(self):
+    def get_ohlcv(self, symbol: str, interval: str, limit: int = 100) -> pd.DataFrame:
         """
-        Fetch the latest market price.
-        :return: Current price as float or None if failed.
+        Returns OHLCV data as a pandas DataFrame with columns:
+        [timestamp, open, high, low, close, volume]
         """
-        url = f"{self.BASE_URL}/ticker/price"
-        params = {"symbol": self.symbol.upper()}
+        data = self.get_klines(symbol, interval, limit)
+        if not data:
+            return pd.DataFrame()
 
-        try:
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            price = float(response.json()["price"])
-            logger.info(f"Current price of {self.symbol}: {price}")
-            return price
-        except requests.RequestException as e:
-            logger.error(f"Error fetching current price: {e}")
-            return None
+        df = pd.DataFrame(data, columns=[
+            "open_time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_asset_volume", "trades", 
+            "taker_buy_base", "taker_buy_quote", "ignore"
+        ])
 
-exchange_service = ExchangeService()
+        df = df[["open_time", "open", "high", "low", "close", "volume"]].copy()
+        df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
+        df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
+
+        return df.rename(columns={"open_time": "timestamp"})
